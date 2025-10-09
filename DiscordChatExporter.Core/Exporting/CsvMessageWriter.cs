@@ -76,11 +76,11 @@ internal partial class CsvMessageWriter(Stream stream, ExportContext context)
         await base.WriteMessageAsync(message, cancellationToken);
 
         // Author ID
-        await _writer.WriteAsync(CsvEncode(message.Author.Id.ToString()));
+        await _writer.WriteAsync(CsvEncode(message.Author?.Id.ToString() ?? string.Empty));
         await _writer.WriteAsync(',');
 
         // Author name
-        await _writer.WriteAsync(CsvEncode(message.Author.FullName));
+        await _writer.WriteAsync(CsvEncode(message.Author?.FullName ?? string.Empty));
         await _writer.WriteAsync(',');
 
         // Message timestamp

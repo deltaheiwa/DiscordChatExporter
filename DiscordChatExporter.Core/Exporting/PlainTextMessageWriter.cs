@@ -26,7 +26,7 @@ internal class PlainTextMessageWriter(Stream stream, ExportContext context)
     {
         // Timestamp & author
         await _writer.WriteAsync($"[{Context.FormatDate(message.Timestamp)}]");
-        await _writer.WriteAsync($" {message.Author.FullName}");
+        await _writer.WriteAsync($" {message.Author?.FullName}");
 
         // Whether the message is pinned
         if (message.IsPinned)

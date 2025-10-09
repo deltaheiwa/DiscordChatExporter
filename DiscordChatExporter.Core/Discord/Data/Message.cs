@@ -14,7 +14,7 @@ public partial record Message(
     Snowflake Id,
     MessageKind Kind,
     MessageFlags Flags,
-    User Author,
+    User? Author,
     DateTimeOffset Timestamp,
     DateTimeOffset? EditedTimestamp,
     DateTimeOffset? CallEndedTimestamp,
@@ -27,7 +27,8 @@ public partial record Message(
     IReadOnlyList<User> MentionedUsers,
     MessageReference? Reference,
     Message? ReferencedMessage,
-    Interaction? Interaction
+    Interaction? Interaction,
+    IReadOnlyList<MessageSnapshot> Snapshot
 ) : IHasId
 {
     public bool IsSystemNotification { get; } =
@@ -46,12 +47,13 @@ public partial record Message(
 
     public IEnumerable<User> GetReferencedUsers()
     {
-        yield return Author;
+        if (Author is not null)
+            yield return Author;
 
         foreach (var user in MentionedUsers)
             yield return user;
 
-        if (ReferencedMessage is not null)
+        if (ReferencedMessage?.Author != null)
             yield return ReferencedMessage.Author;
 
         if (Interaction is not null)
@@ -122,14 +124,16 @@ public partial record Message
 
     public static Message Parse(JsonElement json)
     {
-        var id = json.GetProperty("id").GetNonWhiteSpaceString().Pipe(Snowflake.Parse);
+        var id = json.GetPropertyOrNull("id") is null
+            ? Snowflake.Zero
+            : json.GetProperty("id").GetNonWhiteSpaceString().Pipe(Snowflake.Parse);
         var kind = json.GetProperty("type").GetInt32().Pipe(t => (MessageKind)t);
 
         var flags =
             json.GetPropertyOrNull("flags")?.GetInt32OrNull()?.Pipe(f => (MessageFlags)f)
             ?? MessageFlags.None;
 
-        var author = json.GetProperty("author").Pipe(User.Parse);
+        var author = json.GetPropertyOrNull("author")?.Pipe(User.Parse) ?? null;
         var timestamp = json.GetProperty("timestamp").GetDateTimeOffset();
         var editedTimestamp = json.GetPropertyOrNull("edited_timestamp")?.GetDateTimeOffsetOrNull();
         var callEndedTimestamp = json.GetPropertyOrNull("call")
@@ -171,6 +175,12 @@ public partial record Message
         var referencedMessage = json.GetPropertyOrNull("referenced_message")?.Pipe(Parse);
         var interaction = json.GetPropertyOrNull("interaction")?.Pipe(Interaction.Parse);
 
+        var snapshot =
+            json.GetPropertyOrNull("message_snapshots")
+                ?.EnumerateArrayOrNull()
+                ?.Select(MessageSnapshot.Parse)
+                .ToArray() ?? [];
+
         return new Message(
             id,
             kind,
@@ -188,7 +198,8 @@ public partial record Message
             mentionedUsers,
             messageReference,
             referencedMessage,
-            interaction
+            interaction,
+            snapshot
         );
     }
 }

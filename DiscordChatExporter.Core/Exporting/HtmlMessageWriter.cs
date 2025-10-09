@@ -46,15 +46,15 @@ internal class HtmlMessageWriter(Stream stream, ExportContext context, string th
                 return false;
 
             // Messages must be sent by the same author
-            if (message.Author.Id != lastMessage.Author.Id)
+            if (message.Author?.Id != lastMessage.Author?.Id)
                 return false;
 
             // If the author changed their name after the last message, their new messages
             // cannot join the existing group.
             if (
                 !string.Equals(
-                    message.Author.FullName,
-                    lastMessage.Author.FullName,
+                    message.Author?.FullName,
+                    lastMessage.Author?.FullName,
                     StringComparison.Ordinal
                 )
             )

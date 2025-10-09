@@ -390,7 +390,8 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         CancellationToken cancellationToken = default
     )
     {
-        await base.WriteMessageAsync(message, cancellationToken);
+        if (message.Author is not null)
+            await base.WriteMessageAsync(message, cancellationToken);
 
         _writer.WriteStartObject();
 
@@ -422,8 +423,11 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         }
 
         // Author
-        _writer.WritePropertyName("author");
-        await WriteUserAsync(message.Author, true, cancellationToken);
+        if (message.Author is not null)
+        {
+            _writer.WritePropertyName("author");
+            await WriteUserAsync(message.Author, true, cancellationToken);
+        }
 
         // Attachments
         _writer.WriteStartArray("attachments");
@@ -524,6 +528,14 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             _writer.WriteString("guildId", message.Reference.GuildId?.ToString());
             _writer.WriteEndObject();
         }
+
+        // Message snapshot (forward message)
+        _writer.WriteStartArray("snapshot");
+        foreach (var snapshot in message.Snapshot)
+        {
+            await WriteMessageAsync(snapshot.Message, cancellationToken);
+        }
+        _writer.WriteEndArray();
 
         // Interaction
         if (message.Interaction is not null)

@@ -2,6 +2,7 @@
 @using System.Collections.Generic
 @using System.Linq
 @using System.Threading.Tasks
+@using DiscordChatExporter.Core.Discord
 @using DiscordChatExporter.Core.Discord.Data
 @using DiscordChatExporter.Core.Discord.Data.Embeds
 @using DiscordChatExporter.Core.Markdown.Parsing
@@ -38,11 +39,11 @@
 {
     var isFirst = i == 0;
 
-    var authorMember = Context.TryGetMember(message.Author.Id);
-    var authorColor = Context.TryGetUserColor(message.Author.Id);
-    var authorDisplayName = message.Author.IsBot
-        ? message.Author.DisplayName
-        : authorMember?.DisplayName ?? message.Author.DisplayName;
+    var authorMember = Context.TryGetMember(message.Author?.Id ?? Snowflake.Zero);
+    var authorColor = Context.TryGetUserColor(message.Author?.Id ?? Snowflake.Zero);
+    var authorDisplayName = message.Author?.IsBot ?? false
+        ? message.Author?.DisplayName
+        : authorMember?.DisplayName ?? message.Author?.DisplayName ?? "Unknown User";
 
     <div id="chatlog__message-container-@message.Id" class="chatlog__message-container @(message.IsPinned ? "chatlog__message-container--pinned" : null)" data-message-id="@message.Id">
         <div class="chatlog__message">
@@ -71,7 +72,7 @@
 
                 <div class="chatlog__message-primary">
                     @* Author name *@
-                    <span class="chatlog__system-notification-author" style="@(authorColor is not null ? $"color: rgb({authorColor.Value.R}, {authorColor.Value.G}, {authorColor.Value.B})" : null)" title="@message.Author.FullName" data-user-id="@message.Author.Id">@authorDisplayName</span>
+                    <span class="chatlog__system-notification-author" style="@(authorColor is not null ? $"color: rgb({authorColor.Value.R}, {authorColor.Value.G}, {authorColor.Value.B})" : null)" title="@message.Author?.FullName" data-user-id="@message.Author?.Id">@authorDisplayName</span>
 
                     @* Space out the content *@
                     <span> </span>
@@ -86,7 +87,7 @@
                         }
                         else if (message.Kind == MessageKind.RecipientRemove && message.MentionedUsers.Any())
                         {
-                            if (message.Author.Id == message.MentionedUsers.First().Id)
+                            if (message.Author?.Id == message.MentionedUsers.First().Id)
                             {
                                 <span>left the group.</span>
                             }
@@ -149,7 +150,7 @@
                         }
 
                         // Avatar
-                        <img class="chatlog__avatar" src="@await ResolveAssetUrlAsync(authorMember?.AvatarUrl ?? message.Author.AvatarUrl)" alt="Avatar" loading="lazy">
+                        <img class="chatlog__avatar" src="@await ResolveAssetUrlAsync(authorMember?.AvatarUrl ?? message.Author?.AvatarUrl ?? String.Empty)" alt="Avatar" loading="lazy">
                     }
                     else
                     {
@@ -166,14 +167,14 @@
                             <div class="chatlog__reply">
                                 @if (message.ReferencedMessage is not null)
                                 {
-                                    var referencedUserMember = Context.TryGetMember(message.ReferencedMessage.Author.Id);
-                                    var referencedUserColor = Context.TryGetUserColor(message.ReferencedMessage.Author.Id);
-                                    var referencedUserDisplayName = message.ReferencedMessage.Author.IsBot
-                                        ? message.ReferencedMessage.Author.DisplayName
-                                        : referencedUserMember?.DisplayName ?? message.ReferencedMessage.Author.DisplayName;
+                                    var referencedUserMember = Context.TryGetMember(message.ReferencedMessage.Author?.Id ?? Snowflake.Zero);
+                                    var referencedUserColor = Context.TryGetUserColor(message.ReferencedMessage.Author?.Id ?? Snowflake.Zero);
+                                    var referencedUserDisplayName = message.ReferencedMessage.Author?.IsBot ?? false
+                                        ? message.ReferencedMessage.Author?.DisplayName
+                                        : referencedUserMember?.DisplayName ?? message.ReferencedMessage.Author?.DisplayName ?? "Unknown User";
 
-                                    <img class="chatlog__reply-avatar" src="@await ResolveAssetUrlAsync(referencedUserMember?.AvatarUrl ?? message.ReferencedMessage.Author.AvatarUrl)" alt="Avatar" loading="lazy">
-                                    <div class="chatlog__reply-author" style="@(referencedUserColor is not null ? $"color: rgb({referencedUserColor.Value.R}, {referencedUserColor.Value.G}, {referencedUserColor.Value.B})" : null)" title="@message.ReferencedMessage.Author.FullName">@referencedUserDisplayName</div>
+                                    <img class="chatlog__reply-avatar" src="@await ResolveAssetUrlAsync(referencedUserMember?.AvatarUrl ?? message.ReferencedMessage.Author?.AvatarUrl ?? "")" alt="Avatar" loading="lazy">
+                                    <div class="chatlog__reply-author" style="@(referencedUserColor is not null ? $"color: rgb({referencedUserColor.Value.R}, {referencedUserColor.Value.G}, {referencedUserColor.Value.B})" : null)" title="@message.ReferencedMessage.Author?.FullName">@referencedUserDisplayName</div>
                                     <div class="chatlog__reply-content">
                                         <span class="chatlog__reply-link" onclick="scrollToMessage(event, '@message.ReferencedMessage.Id')">
                                             @if (!string.IsNullOrWhiteSpace(message.ReferencedMessage.Content) && !message.ReferencedMessage.IsContentHidden())
@@ -211,6 +212,10 @@
                                         used /@message.Interaction.Name
                                     </div>
                                 }
+                                else if (message.Reference is not null)
+                                {
+                                    
+                                }
                                 else
                                 {
                                     <div class="chatlog__reply-unknown">
@@ -223,13 +228,13 @@
                         // Header
                         <div class="chatlog__header">
                             @* Author name *@
-                            <span class="chatlog__author" style="@(authorColor is not null ? $"color: rgb({authorColor.Value.R}, {authorColor.Value.G}, {authorColor.Value.B})" : null)" title="@message.Author.FullName" data-user-id="@message.Author.Id">@authorDisplayName</span>
+                            <span class="chatlog__author" style="@(authorColor is not null ? $"color: rgb({authorColor.Value.R}, {authorColor.Value.G}, {authorColor.Value.B})" : null)" title="@message.Author?.FullName" data-user-id="@message.Author?.Id">@authorDisplayName</span>
 
                             @* Bot tag *@
-                            @if (message.Author.IsBot)
+                            @if (message.Author?.IsBot ?? false)
                             {
                                 // For cross-posts, the BOT tag is replaced with the SERVER tag
-                                if (message.Flags.HasFlag(MessageFlags.CrossPost))
+                                if (message.Flags.HasFlag(MessageFlags.IsCrossPost))
                                 {
                                     <span class="chatlog__author-tag">SERVER</span>
                                 }

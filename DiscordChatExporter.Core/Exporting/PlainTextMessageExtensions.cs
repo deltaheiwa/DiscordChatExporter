@@ -15,7 +15,7 @@ internal static class PlainTextMessageExtensions
                 : "Added a recipient.",
 
             MessageKind.RecipientRemove => message.MentionedUsers.Any()
-                ? message.Author.Id == message.MentionedUsers.First().Id
+                ? message.Author?.Id == message.MentionedUsers.First().Id
                     ? "Left the group."
                     : $"Removed {message.MentionedUsers.First().DisplayName} from the group."
                 : "Removed a recipient.",
