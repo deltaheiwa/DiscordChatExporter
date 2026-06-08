@@ -9,9 +9,9 @@
   <ItemGroup>
     <PackageReference Include="CliFx" />
     <PackageReference Include="CSharpier.MsBuild" PrivateAssets="all" />
-    <PackageReference Include="Deorcify" PrivateAssets="all" />
+    <PackageReference Include="Deorcify" />
     <PackageReference Include="Gress" />
-    <PackageReference Include="PowerKit" PrivateAssets="all" />
+    <PackageReference Include="PowerKit" />
     <PackageReference Include="Spectre.Console" />
   </ItemGroup>
 
