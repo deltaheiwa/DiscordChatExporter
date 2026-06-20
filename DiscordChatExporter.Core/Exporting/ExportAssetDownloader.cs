@@ -157,10 +157,7 @@ internal partial class ExportAssetDownloader
             // Lowercase variant (introduced in 2.46.1)
             GetFileNameFromUrl(url, Convert.ToHexStringLower(hashData).Truncate(5)),
             // Uppercase variant (original)
-            GetFileNameFromUrl(
-                url,
-                Convert.ToHexString(hashData).Truncate(5)
-            )
+            GetFileNameFromUrl(url, Convert.ToHexString(hashData).Truncate(5)),
         ];
     }
 }
