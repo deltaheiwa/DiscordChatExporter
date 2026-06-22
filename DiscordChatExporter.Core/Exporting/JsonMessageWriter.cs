@@ -9,8 +9,8 @@ using System.Threading.Tasks;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Discord.Data.Embeds;
 using DiscordChatExporter.Core.Markdown.Parsing;
-using DiscordChatExporter.Core.Utils.Extensions;
 using JsonExtensions.Writing;
+using PowerKit.Extensions;
 
 namespace DiscordChatExporter.Core.Exporting;
 
@@ -55,7 +55,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
             Context.TryGetMember(user.Id)?.DisplayName ?? user.DisplayName
         );
 
-        _writer.WriteString("color", Context.TryGetUserColor(user.Id)?.ToHex());
+        _writer.WriteString("color", Context.TryGetUserColor(user.Id)?.ToHexString());
         _writer.WriteBoolean("isBot", user.IsBot);
 
         if (includeRoles)
@@ -109,7 +109,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
 
             _writer.WriteString("id", role.Id.ToString());
             _writer.WriteString("name", role.Name);
-            _writer.WriteString("color", role.Color?.ToHex());
+            _writer.WriteString("color", role.Color?.ToHexString());
             _writer.WriteNumber("position", role.Position);
 
             _writer.WriteEndObject();
@@ -117,6 +117,24 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
 
         _writer.WriteEndArray();
         await _writer.FlushAsync(cancellationToken);
+    }
+
+    private async ValueTask WriteAttachmentAsync(
+        Attachment attachment,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _writer.WriteStartObject();
+
+        _writer.WriteString("id", attachment.Id.ToString());
+        _writer.WriteString(
+            "url",
+            await Context.ResolveAssetUrlAsync(attachment.Url, cancellationToken)
+        );
+        _writer.WriteString("fileName", attachment.FileName);
+        _writer.WriteNumber("fileSizeBytes", attachment.FileSize.TotalBytes);
+
+        _writer.WriteEndObject();
     }
 
     private async ValueTask WriteEmbedAuthorAsync(
@@ -138,6 +156,8 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
                     cancellationToken
                 )
             );
+
+            _writer.WriteString("iconCanonicalUrl", embedAuthor.IconUrl);
         }
 
         _writer.WriteEndObject();
@@ -160,6 +180,8 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
                     cancellationToken
                 )
             );
+
+            _writer.WriteString("canonicalUrl", embedImage.Url);
         }
 
         _writer.WriteNumber("width", embedImage.Width);
@@ -185,6 +207,8 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
                     cancellationToken
                 )
             );
+
+            _writer.WriteString("canonicalUrl", embedVideo.Url);
         }
 
         _writer.WriteNumber("width", embedVideo.Width);
@@ -212,6 +236,8 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
                     cancellationToken
                 )
             );
+
+            _writer.WriteString("iconCanonicalUrl", embedFooter.IconUrl);
         }
 
         _writer.WriteEndObject();
@@ -255,7 +281,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         );
 
         if (embed.Color is not null)
-            _writer.WriteString("color", embed.Color.Value.ToHex());
+            _writer.WriteString("color", embed.Color.Value.ToHexString());
 
         if (embed.Author is not null)
         {
@@ -325,6 +351,24 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
 
         _writer.WriteEndObject();
         await _writer.FlushAsync(cancellationToken);
+    }
+
+    private async ValueTask WriteStickerAsync(
+        Sticker sticker,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _writer.WriteStartObject();
+
+        _writer.WriteString("id", sticker.Id.ToString());
+        _writer.WriteString("name", sticker.Name);
+        _writer.WriteString("format", sticker.Format.ToString());
+        _writer.WriteString(
+            "sourceUrl",
+            await Context.ResolveAssetUrlAsync(sticker.SourceUrl, cancellationToken)
+        );
+
+        _writer.WriteEndObject();
     }
 
     public override async ValueTask WritePreambleAsync(
@@ -433,19 +477,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         _writer.WriteStartArray("attachments");
 
         foreach (var attachment in message.Attachments)
-        {
-            _writer.WriteStartObject();
-
-            _writer.WriteString("id", attachment.Id.ToString());
-            _writer.WriteString(
-                "url",
-                await Context.ResolveAssetUrlAsync(attachment.Url, cancellationToken)
-            );
-            _writer.WriteString("fileName", attachment.FileName);
-            _writer.WriteNumber("fileSizeBytes", attachment.FileSize.TotalBytes);
-
-            _writer.WriteEndObject();
-        }
+            await WriteAttachmentAsync(attachment, cancellationToken);
 
         _writer.WriteEndArray();
 
@@ -461,19 +493,7 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         _writer.WriteStartArray("stickers");
 
         foreach (var sticker in message.Stickers)
-        {
-            _writer.WriteStartObject();
-
-            _writer.WriteString("id", sticker.Id.ToString());
-            _writer.WriteString("name", sticker.Name);
-            _writer.WriteString("format", sticker.Format.ToString());
-            _writer.WriteString(
-                "sourceUrl",
-                await Context.ResolveAssetUrlAsync(sticker.SourceUrl, cancellationToken)
-            );
-
-            _writer.WriteEndObject();
-        }
+            await WriteStickerAsync(sticker, cancellationToken);
 
         _writer.WriteEndArray();
 
@@ -523,20 +543,58 @@ internal class JsonMessageWriter(Stream stream, ExportContext context)
         if (message.Reference is not null)
         {
             _writer.WriteStartObject("reference");
+            _writer.WriteString("type", message.Reference.Kind.ToString());
             _writer.WriteString("messageId", message.Reference.MessageId?.ToString());
             _writer.WriteString("channelId", message.Reference.ChannelId?.ToString());
             _writer.WriteString("guildId", message.Reference.GuildId?.ToString());
             _writer.WriteEndObject();
         }
 
-        // Message snapshot (forward message)
-        _writer.WriteStartArray("snapshot");
-        foreach (var snapshot in message.Snapshot)
+        // Forwarded message
+        if (message.ForwardedMessage is not null)
         {
-            await WriteMessageAsync(snapshot.Message, cancellationToken);
-        }
-        _writer.WriteEndArray();
+            _writer.WriteStartObject("forwardedMessage");
 
+            _writer.WriteString(
+                "timestamp",
+                Context.NormalizeDate(message.ForwardedMessage.Timestamp)
+            );
+
+            _writer.WriteString(
+                "timestampEdited",
+                message.ForwardedMessage.EditedTimestamp?.Pipe(Context.NormalizeDate)
+            );
+
+            _writer.WriteString(
+                "content",
+                await FormatMarkdownAsync(message.ForwardedMessage.Content, cancellationToken)
+            );
+
+            // Forwarded attachments
+            _writer.WriteStartArray("attachments");
+
+            foreach (var attachment in message.ForwardedMessage.Attachments)
+                await WriteAttachmentAsync(attachment, cancellationToken);
+
+            _writer.WriteEndArray();
+
+            // Forwarded embeds
+            _writer.WriteStartArray("embeds");
+            foreach (var embed in message.ForwardedMessage.Embeds)
+                await WriteEmbedAsync(embed, cancellationToken);
+            _writer.WriteEndArray();
+
+            // Forwarded stickers
+            _writer.WriteStartArray("stickers");
+
+            foreach (var sticker in message.ForwardedMessage.Stickers)
+                await WriteStickerAsync(sticker, cancellationToken);
+
+            _writer.WriteEndArray();
+
+            _writer.WriteEndObject();
+        }
+        
         // Interaction
         if (message.Interaction is not null)
         {

@@ -1,16 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using AsyncKeyedLock;
 using DiscordChatExporter.Core.Utils;
-using DiscordChatExporter.Core.Utils.Extensions;
+using PowerKit.Extensions;
 
 namespace DiscordChatExporter.Core.Exporting;
 
@@ -38,13 +38,47 @@ internal partial class ExportAssetDownloader(string workingDirPath, bool reuse)
         if (reuse && File.Exists(filePath))
             return _previousPathsByUrl[url] = filePath;
 
+        // Check for a file cached by the legacy naming scheme (5-char hash) and rename it
+        // to the new naming scheme to preserve backwards compatibility with existing exports.
+        // This will catch both the 5-char lowercase hash and the 5-char uppercase hash variants.
+        if (reuse)
+        {
+            var legacyFileNames = GetLegacyFileNamesFromUrl(url);
+            foreach (var legacyFileName in legacyFileNames)
+            {
+                var legacyFilePath = Path.Combine(workingDirPath, legacyFileName);
+                if (File.Exists(legacyFilePath))
+                {
+                    // Overwrite in case the destination file was created concurrently between our
+                    // earlier existence check and this move operation
+                    try
+                    {
+                        File.Move(legacyFilePath, filePath, true);
+                        return _previousPathsByUrl[url] = filePath;
+                    }
+                    catch (IOException)
+                    {
+                        // The legacy file was moved or deleted concurrently or something else happened.
+                        // Upgrading old files is not crucial, so we can just move on.
+                    }
+                }
+            }
+        }
+
         Directory.CreateDirectory(workingDirPath);
 
         await Http.ResiliencePipeline.ExecuteAsync(
             async innerCancellationToken =>
             {
                 // Download the file
-                using var response = await Http.Client.GetAsync(url, innerCancellationToken);
+                using var response = await Http.Client.GetAsync(
+                    url,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    innerCancellationToken
+                );
+
+                response.EnsureSuccessStatusCode();
+
                 await using var output = File.Create(filePath);
                 await response.Content.CopyToAsync(output, innerCancellationToken);
             },
@@ -57,48 +91,31 @@ internal partial class ExportAssetDownloader(string workingDirPath, bool reuse)
 
 internal partial class ExportAssetDownloader
 {
-    private const String CHARSET = "0123456789bcdfghjklmnpqrstvwxyz_";
-
-    private static String Base32(byte[] data)
+    private static string NormalizeUrl(string url)
     {
-        var newString = new StringBuilder();
-        uint accum = 0;
-        uint bits = 0;
+        // Remove signature parameters from Discord CDN/media URLs to normalize them
+        var uri = new Uri(url);
 
-        foreach (byte b in data)
+        if (
+            !string.Equals(uri.Host, "cdn.discordapp.com", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(uri.Host, "media.discordapp.net", StringComparison.OrdinalIgnoreCase)
+        )
         {
-            accum <<= 8;
-            accum |= b;
-            bits += 8;
-
-            while (bits > 5)
-            {
-                char ch = CHARSET[(int)(accum & 0x1F)];
-                accum >>= 5;
-                bits -= 5;
-                newString.Append(ch);
-            }
-        }
-        if (bits != 0)
-        {
-            char ch = CHARSET[(int)(accum & 0x1F)];
-            newString.Append(ch);
+            return url;
         }
 
-        return newString.ToString();
+        var query = HttpUtility.ParseQueryString(uri.Query);
+        query.Remove("ex");
+        query.Remove("is");
+        query.Remove("hm");
+
+        return uri.GetLeftPart(UriPartial.Path) + query;
     }
 
-    private static string GetUrlHash(string url)
-    {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(url));
-        // 12 characters of base32 contains about as much entropy as a Discord snowflake
-        return Base32(hash).Truncate(12);
-    }
-
-    private static string AddHashToUrl(string url, string urlHash)
+    private static string GetFileNameFromUrl(string url, string urlHash)
     {
         // Try to extract the file name from URL
-        var fileName = Regex.Match(url, @".+/([^?]*)").Groups[1].Value;
+        var fileName = new Uri(url, UriKind.RelativeOrAbsolute).TryGetFileName();
 
         // If it's not there, just use the URL hash as the file name
         if (string.IsNullOrWhiteSpace(fileName))
@@ -116,60 +133,32 @@ internal partial class ExportAssetDownloader
             fileExtension = "";
         }
 
-        return PathEx.EscapeFileName(
+        return Path.EscapeFileName(
             fileNameWithoutExtension.Truncate(42) + '-' + urlHash + fileExtension
         );
     }
 
-    private static string GetFileNameFromUrl(string url)
+    private static string GetFileNameFromUrl(string url) =>
+        GetFileNameFromUrl(
+            url,
+            // 16 chars = 64 bits, reaches 1% collision probability at ~609 million files
+            SHA256
+                .HashData(Encoding.UTF8.GetBytes(NormalizeUrl(url)))
+                .Pipe(Convert.ToHexStringLower)
+                .Truncate(16)
+        );
+
+    // Legacy naming used a 5-char hash, kept for backwards compatibility with existing exports
+    private static IReadOnlyList<string> GetLegacyFileNamesFromUrl(string url)
     {
-        var uri = new Uri(url);
+        var hashData = SHA256.HashData(Encoding.UTF8.GetBytes(NormalizeUrl(url)));
 
-        if (string.Equals(uri.Host, "cdn.discordapp.com"))
-        {
-            string[] split = uri.AbsolutePath.Split("/");
-
-            // Attachments
-            if (uri.AbsolutePath.StartsWith("/attachments/") && split.Length == 5)
-            {
-                // use the attachment snowflake for attachments
-                if (ulong.TryParse(split[3], out var snowflake))
-                    return AddHashToUrl(url, snowflake.ToString());
-            }
-
-            // Emojis
-            if (
-                uri.AbsolutePath.StartsWith("/emojis/")
-                && split.Length == 3
-                && split[2].Contains(".")
-            )
-            {
-                var nameSplit = split[2].Split(".", 2);
-                if (ulong.TryParse(nameSplit[0], out var snowflake))
-                    return $"emoji-discord-{snowflake}.{nameSplit[1]}";
-            }
-
-            // Avatars
-            if (uri.AbsolutePath.StartsWith("/avatars/") && split.Length == 4)
-            {
-                return $"avatar-{split[2]}-{GetUrlHash(url)}.{split[3].Split(".").Last()}";
-            }
-        }
-
-        if (string.Equals(uri.Host, "cdn.jsdelivr.net"))
-        {
-            string[] split = uri.AbsolutePath.Split("/");
-
-            // twemoji
-            if (
-                uri.AbsolutePath.StartsWith("/gh/twitter/twemoji@latest/assets/svg/")
-                && split.Length == 7
-            )
-            {
-                return $"emoji-twemoji-{split[6]}";
-            }
-        }
-
-        return AddHashToUrl(url, GetUrlHash(url));
+        return
+        [
+            // Lowercase variant (introduced in 2.46.1)
+            GetFileNameFromUrl(url, Convert.ToHexStringLower(hashData).Truncate(5)),
+            // Uppercase variant (original)
+            GetFileNameFromUrl(url, Convert.ToHexString(hashData).Truncate(5)),
+        ];
     }
 }

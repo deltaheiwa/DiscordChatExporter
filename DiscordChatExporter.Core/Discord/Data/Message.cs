@@ -4,8 +4,8 @@ using System.Linq;
 using System.Text.Json;
 using DiscordChatExporter.Core.Discord.Data.Common;
 using DiscordChatExporter.Core.Discord.Data.Embeds;
-using DiscordChatExporter.Core.Utils.Extensions;
 using JsonExtensions.Reading;
+using PowerKit.Extensions;
 
 namespace DiscordChatExporter.Core.Discord.Data;
 
@@ -14,7 +14,7 @@ public partial record Message(
     Snowflake Id,
     MessageKind Kind,
     MessageFlags Flags,
-    User? Author,
+    User Author,
     DateTimeOffset Timestamp,
     DateTimeOffset? EditedTimestamp,
     DateTimeOffset? CallEndedTimestamp,
@@ -27,10 +27,16 @@ public partial record Message(
     IReadOnlyList<User> MentionedUsers,
     MessageReference? Reference,
     Message? ReferencedMessage,
-    Interaction? Interaction,
-    IReadOnlyList<MessageSnapshot> Snapshot
+    MessageSnapshot? ForwardedMessage,
+    Interaction? Interaction
 ) : IHasId
 {
+    public bool IsEmpty { get; } =
+        string.IsNullOrWhiteSpace(Content)
+        && !Attachments.Any()
+        && !Embeds.Any()
+        && !Stickers.Any();
+
     public bool IsSystemNotification { get; } =
         Kind is >= MessageKind.RecipientAdd and <= MessageKind.ThreadCreated;
 
@@ -39,21 +45,16 @@ public partial record Message(
     // App interactions are rendered as replies in the Discord client, but they are not actually replies
     public bool IsReplyLike => IsReply || Interaction is not null;
 
-    public bool IsEmpty { get; } =
-        string.IsNullOrWhiteSpace(Content)
-        && !Attachments.Any()
-        && !Embeds.Any()
-        && !Stickers.Any();
+    public bool IsForwarded { get; } = Reference?.Kind == MessageReferenceKind.Forward;
 
     public IEnumerable<User> GetReferencedUsers()
     {
-        if (Author is not null)
-            yield return Author;
+        yield return Author;
 
         foreach (var user in MentionedUsers)
             yield return user;
 
-        if (ReferencedMessage?.Author != null)
+        if (ReferencedMessage is not null)
             yield return ReferencedMessage.Author;
 
         if (Interaction is not null)
@@ -124,16 +125,14 @@ public partial record Message
 
     public static Message Parse(JsonElement json)
     {
-        var id = json.GetPropertyOrNull("id") is null
-            ? Snowflake.Zero
-            : json.GetProperty("id").GetNonWhiteSpaceString().Pipe(Snowflake.Parse);
+        var id = json.GetProperty("id").GetNonWhiteSpaceString().Pipe(Snowflake.Parse);
         var kind = json.GetProperty("type").GetInt32().Pipe(t => (MessageKind)t);
 
         var flags =
             json.GetPropertyOrNull("flags")?.GetInt32OrNull()?.Pipe(f => (MessageFlags)f)
             ?? MessageFlags.None;
 
-        var author = json.GetPropertyOrNull("author")?.Pipe(User.Parse) ?? null;
+        var author = json.GetProperty("author").Pipe(User.Parse);
         var timestamp = json.GetProperty("timestamp").GetDateTimeOffset();
         var editedTimestamp = json.GetPropertyOrNull("edited_timestamp")?.GetDateTimeOffsetOrNull();
         var callEndedTimestamp = json.GetPropertyOrNull("call")
@@ -172,14 +171,18 @@ public partial record Message
 
         var messageReference = json.GetPropertyOrNull("message_reference")
             ?.Pipe(MessageReference.Parse);
-        var referencedMessage = json.GetPropertyOrNull("referenced_message")?.Pipe(Parse);
-        var interaction = json.GetPropertyOrNull("interaction")?.Pipe(Interaction.Parse);
 
-        var snapshot =
-            json.GetPropertyOrNull("message_snapshots")
-                ?.EnumerateArrayOrNull()
-                ?.Select(MessageSnapshot.Parse)
-                .ToArray() ?? [];
+        var referencedMessage = json.GetPropertyOrNull("referenced_message")?.Pipe(Parse);
+
+        // Currently Discord only supports 1 snapshot per forward
+        var forwardedMessage = json.GetPropertyOrNull("message_snapshots")
+            ?.EnumerateArrayOrNull()
+            ?.Select(j => j.GetPropertyOrNull("message"))
+            .WhereNotNull()
+            .Select(MessageSnapshot.Parse)
+            .FirstOrDefault();
+
+        var interaction = json.GetPropertyOrNull("interaction")?.Pipe(Interaction.Parse);
 
         return new Message(
             id,
@@ -198,8 +201,8 @@ public partial record Message
             mentionedUsers,
             messageReference,
             referencedMessage,
-            interaction,
-            snapshot
+            forwardedMessage,
+            interaction
         );
     }
 }

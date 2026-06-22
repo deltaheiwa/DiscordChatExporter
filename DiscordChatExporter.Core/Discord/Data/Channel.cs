@@ -1,9 +1,9 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using DiscordChatExporter.Core.Discord.Data.Common;
-using DiscordChatExporter.Core.Utils.Extensions;
 using JsonExtensions.Reading;
+using PowerKit.Extensions;
 
 namespace DiscordChatExporter.Core.Discord.Data;
 
@@ -33,9 +33,9 @@ public partial record Channel(
 
     public bool IsThread { get; } =
         Kind
-            is ChannelKind.GuildNewsThread
-                or ChannelKind.GuildPublicThread
-                or ChannelKind.GuildPrivateThread;
+        is ChannelKind.GuildNewsThread
+            or ChannelKind.GuildPublicThread
+            or ChannelKind.GuildPrivateThread;
 
     public bool IsEmpty { get; } = LastMessageId is null;
 
@@ -69,7 +69,8 @@ public partial record Channel
         var guildId =
             json.GetPropertyOrNull("guild_id")
                 ?.GetNonWhiteSpaceStringOrNull()
-                ?.Pipe(Snowflake.Parse) ?? Guild.DirectMessages.Id;
+                ?.Pipe(Snowflake.Parse)
+            ?? Guild.DirectMessages.Id;
 
         var name =
             // Guild channel
@@ -96,7 +97,8 @@ public partial record Channel
         var isArchived =
             json.GetPropertyOrNull("thread_metadata")
                 ?.GetPropertyOrNull("archived")
-                ?.GetBooleanOrNull() ?? false;
+                ?.GetBooleanOrNull()
+            ?? false;
 
         var lastMessageId = json.GetPropertyOrNull("last_message_id")
             ?.GetNonWhiteSpaceStringOrNull()

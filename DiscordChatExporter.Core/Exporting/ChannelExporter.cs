@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using DiscordChatExporter.Core.Discord;
@@ -64,15 +64,23 @@ public class ChannelExporter(DiscordClient discord)
             );
         }
 
-        await foreach (
-            var message in discord.GetMessagesAsync(
+        var messages = !request.IsReverseMessageOrder
+            ? discord.GetMessagesAsync(
                 request.Channel.Id,
                 request.After,
                 request.Before,
                 progress,
                 cancellationToken
             )
-        )
+            : discord.GetMessagesInReverseAsync(
+                request.Channel.Id,
+                request.After,
+                request.Before,
+                progress,
+                cancellationToken
+            );
+
+        await foreach (var message in messages)
         {
             try
             {

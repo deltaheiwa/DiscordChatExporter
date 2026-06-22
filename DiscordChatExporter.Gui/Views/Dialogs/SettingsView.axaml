@@ -1,4 +1,4 @@
-﻿<UserControl
+<UserControl
     x:Class="DiscordChatExporter.Gui.Views.Dialogs.SettingsView"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -12,7 +12,7 @@
             Margin="16"
             FontSize="19"
             FontWeight="Light"
-            Text="Settings" />
+            Text="{Binding LocalizationManager.SettingsTitle}" />
 
         <Border
             Grid.Row="1"
@@ -20,13 +20,13 @@
             BorderBrush="{DynamicResource MaterialDividerBrush}"
             BorderThickness="0,1">
             <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                <StackPanel Orientation="Vertical">
+                <StackPanel
+                    Margin="16,8"
+                    Orientation="Vertical"
+                    Spacing="16">
                     <!--  Theme  -->
-                    <DockPanel
-                        Margin="16,8"
-                        LastChildFill="False"
-                        ToolTip.Tip="Preferred user interface theme">
-                        <TextBlock DockPanel.Dock="Left" Text="Theme" />
+                    <DockPanel LastChildFill="False" ToolTip.Tip="{Binding LocalizationManager.ThemeTooltip}">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding LocalizationManager.ThemeLabel}" />
                         <ComboBox
                             Width="150"
                             DockPanel.Dock="Right"
@@ -34,32 +34,40 @@
                             SelectedItem="{Binding Theme}" />
                     </DockPanel>
 
+                    <!--  Language  -->
+                    <DockPanel LastChildFill="False" ToolTip.Tip="{Binding LocalizationManager.LanguageTooltip}">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding LocalizationManager.LanguageLabel}" />
+                        <ComboBox
+                            Width="150"
+                            DockPanel.Dock="Right"
+                            ItemsSource="{Binding AvailableLanguages}"
+                            SelectedItem="{Binding Language}" />
+                    </DockPanel>
+
                     <!--  Auto-updates  -->
                     <DockPanel
-                        Margin="16,8"
-                        IsVisible="{OnPlatform False,
-                                               Windows=True}"
+                        IsVisible="{Binding IsAutoUpdateAvailable}"
                         LastChildFill="False"
-                        ToolTip.Tip="Perform automatic updates on every launch">
-                        <TextBlock DockPanel.Dock="Left" Text="Auto-update" />
+                        ToolTip.Tip="{Binding LocalizationManager.AutoUpdateTooltip}">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding LocalizationManager.AutoUpdateLabel}" />
                         <ToggleSwitch DockPanel.Dock="Right" IsChecked="{Binding IsAutoUpdateEnabled}" />
                     </DockPanel>
 
                     <!--  Persist token  -->
-                    <DockPanel
-                        Margin="16,8"
-                        LastChildFill="False"
-                        ToolTip.Tip="Save the last used token to a file so that it can be persisted between sessions">
-                        <TextBlock DockPanel.Dock="Left" Text="Persist token" />
+                    <DockPanel LastChildFill="False">
+                        <ToolTip.Tip>
+                            <TextBlock
+                                MaxWidth="400"
+                                Inlines="{Binding LocalizationManager.PersistTokenTooltip, Converter={x:Static converters:MarkdownToInlinesConverter.Instance}}"
+                                TextWrapping="Wrap" />
+                        </ToolTip.Tip>
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding LocalizationManager.PersistTokenLabel}" />
                         <ToggleSwitch DockPanel.Dock="Right" IsChecked="{Binding IsTokenPersisted}" />
                     </DockPanel>
 
                     <!--  Rate limit preference  -->
-                    <DockPanel
-                        Margin="16,8"
-                        LastChildFill="False"
-                        ToolTip.Tip="Whether to respect advisory rate limits. If disabled, only hard rate limits (i.e. 429 responses) will be respected.">
-                        <TextBlock DockPanel.Dock="Left" Text="Rate limit preference" />
+                    <DockPanel LastChildFill="False" ToolTip.Tip="{Binding LocalizationManager.RateLimitPreferenceTooltip}">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding LocalizationManager.RateLimitPreferenceLabel}" />
                         <ComboBox
                             Width="150"
                             DockPanel.Dock="Right"
@@ -74,11 +82,8 @@
                     </DockPanel>
 
                     <!--  Thread inclusion mode  -->
-                    <DockPanel
-                        Margin="16,8"
-                        LastChildFill="False"
-                        ToolTip.Tip="Which types of threads to show in the channel list">
-                        <TextBlock DockPanel.Dock="Left" Text="Show threads" />
+                    <DockPanel LastChildFill="False" ToolTip.Tip="{Binding LocalizationManager.ShowThreadsTooltip}">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding LocalizationManager.ShowThreadsLabel}" />
                         <ComboBox
                             Width="150"
                             DockPanel.Dock="Right"
@@ -87,11 +92,8 @@
                     </DockPanel>
 
                     <!--  Locale  -->
-                    <DockPanel
-                        Margin="16,8"
-                        LastChildFill="False"
-                        ToolTip.Tip="Locale to use when formatting dates and numbers">
-                        <TextBlock DockPanel.Dock="Left" Text="Locale" />
+                    <DockPanel LastChildFill="False" ToolTip.Tip="{Binding LocalizationManager.LocaleTooltip}">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding LocalizationManager.LocaleLabel}" />
                         <ComboBox
                             Width="150"
                             DockPanel.Dock="Right"
@@ -106,22 +108,19 @@
                     </DockPanel>
 
                     <!--  UTC normalization  -->
-                    <DockPanel
-                        Margin="16,8"
-                        LastChildFill="False"
-                        ToolTip.Tip="Normalize all timestamps to UTC+0">
-                        <TextBlock DockPanel.Dock="Left" Text="Normalize to UTC" />
+                    <DockPanel LastChildFill="False" ToolTip.Tip="{Binding LocalizationManager.NormalizeToUtcTooltip}">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding LocalizationManager.NormalizeToUtcLabel}" />
                         <ToggleSwitch DockPanel.Dock="Right" IsChecked="{Binding IsUtcNormalizationEnabled}" />
                     </DockPanel>
 
                     <!--  Parallel limit  -->
-                    <DockPanel
-                        Margin="16,8"
-                        LastChildFill="False"
-                        ToolTip.Tip="How many channels can be exported at the same time">
-                        <TextBlock DockPanel.Dock="Left" Text="Parallel limit" />
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                            <TextBlock Margin="10,0" Text="{Binding ParallelLimit}" />
+                    <DockPanel LastChildFill="False" ToolTip.Tip="{Binding LocalizationManager.ParallelLimitTooltip}">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding LocalizationManager.ParallelLimitLabel}" />
+                        <StackPanel
+                            DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            Spacing="10">
+                            <TextBlock Text="{Binding ParallelLimit}" />
                             <Slider
                                 Width="150"
                                 IsSnapToTickEnabled="True"
@@ -141,7 +140,7 @@
             Margin="16"
             HorizontalAlignment="Stretch"
             Command="{Binding CloseCommand}"
-            Content="CLOSE"
+            Content="{Binding LocalizationManager.CloseButton}"
             IsCancel="True"
             IsDefault="True"
             Theme="{DynamicResource MaterialOutlineButton}" />

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -10,14 +10,14 @@ using DiscordChatExporter.Core.Discord;
 using DiscordChatExporter.Core.Discord.Data;
 using DiscordChatExporter.Core.Exceptions;
 using DiscordChatExporter.Core.Exporting;
-using DiscordChatExporter.Core.Utils.Extensions;
 using DiscordChatExporter.Gui.Framework;
+using DiscordChatExporter.Gui.Localization;
 using DiscordChatExporter.Gui.Models;
 using DiscordChatExporter.Gui.Services;
-using DiscordChatExporter.Gui.Utils;
-using DiscordChatExporter.Gui.Utils.Extensions;
 using Gress;
 using Gress.Completable;
+using PowerKit;
+using PowerKit.Extensions;
 
 namespace DiscordChatExporter.Gui.ViewModels.Components;
 
@@ -28,7 +28,7 @@ public partial class DashboardViewModel : ViewModelBase
     private readonly DialogManager _dialogManager;
     private readonly SettingsService _settingsService;
 
-    private readonly DisposableCollector _eventRoot = new();
+    private readonly IDisposable _eventSubscription;
     private readonly AutoResetProgressMuxer _progressMuxer;
 
     private DiscordClient? _discord;
@@ -37,27 +37,26 @@ public partial class DashboardViewModel : ViewModelBase
         ViewModelManager viewModelManager,
         DialogManager dialogManager,
         SnackbarManager snackbarManager,
-        SettingsService settingsService
+        SettingsService settingsService,
+        LocalizationManager localizationManager
     )
     {
         _viewModelManager = viewModelManager;
         _dialogManager = dialogManager;
         _snackbarManager = snackbarManager;
         _settingsService = settingsService;
+        LocalizationManager = localizationManager;
 
         _progressMuxer = Progress.CreateMuxer().WithAutoReset();
 
-        _eventRoot.Add(
+        _eventSubscription = Disposable.Merge(
             Progress.WatchProperty(
                 o => o.Current,
-                () => OnPropertyChanged(nameof(IsProgressIndeterminate))
-            )
-        );
-
-        _eventRoot.Add(
+                _ => OnPropertyChanged(nameof(IsProgressIndeterminate))
+            ),
             SelectedChannels.WatchProperty(
                 o => o.Count,
-                () => ExportCommand.NotifyCanExecuteChanged()
+                _ => ExportCommand.NotifyCanExecuteChanged()
             )
         );
     }
@@ -68,6 +67,8 @@ public partial class DashboardViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(PullChannelsCommand))]
     [NotifyCanExecuteChangedFor(nameof(ExportCommand))]
     public partial bool IsBusy { get; set; }
+
+    public LocalizationManager LocalizationManager { get; }
 
     public ProgressContainer<Percentage> Progress { get; } = new();
 
@@ -90,19 +91,17 @@ public partial class DashboardViewModel : ViewModelBase
 
     public ObservableCollection<ChannelConnection> SelectedChannels { get; } = [];
 
-    [RelayCommand]
-    private void Initialize()
+    public override Task InitializeAsync()
     {
         if (!string.IsNullOrWhiteSpace(_settingsService.LastToken))
             Token = _settingsService.LastToken;
+
+        return Task.CompletedTask;
     }
 
     [RelayCommand]
     private async Task ShowSettingsAsync() =>
-        await _dialogManager.ShowDialogAsync(_viewModelManager.CreateSettingsViewModel());
-
-    [RelayCommand]
-    private void ShowHelp() => ProcessEx.StartShellExecute(Program.ProjectDocumentationUrl);
+        await _dialogManager.ShowDialogAsync(_viewModelManager.GetSettingsViewModel());
 
     private bool CanPullGuilds() => !IsBusy && !string.IsNullOrWhiteSpace(Token);
 
@@ -139,8 +138,8 @@ public partial class DashboardViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            var dialog = _viewModelManager.CreateMessageBoxViewModel(
-                "Error pulling servers",
+            var dialog = _viewModelManager.GetMessageBoxViewModel(
+                LocalizationManager.ErrorPullingGuildsTitle,
                 ex.ToString()
             );
 
@@ -206,8 +205,8 @@ public partial class DashboardViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            var dialog = _viewModelManager.CreateMessageBoxViewModel(
-                "Error pulling channels",
+            var dialog = _viewModelManager.GetMessageBoxViewModel(
+                LocalizationManager.ErrorPullingChannelsTitle,
                 ex.ToString()
             );
 
@@ -233,7 +232,7 @@ public partial class DashboardViewModel : ViewModelBase
             if (_discord is null || SelectedGuild is null || !SelectedChannels.Any())
                 return;
 
-            var dialog = _viewModelManager.CreateExportSetupViewModel(
+            var dialog = _viewModelManager.GetExportSetupViewModel(
                 SelectedGuild,
                 SelectedChannels.Select(c => c.Channel).ToArray()
             );
@@ -272,6 +271,7 @@ public partial class DashboardViewModel : ViewModelBase
                             dialog.Before?.Pipe(Snowflake.FromDate),
                             dialog.PartitionLimit,
                             dialog.MessageFilter,
+                            dialog.IsReverseMessageOrder,
                             dialog.ShouldFormatMarkdown,
                             dialog.ShouldDownloadAssets,
                             dialog.ShouldReuseAssets,
@@ -302,14 +302,17 @@ public partial class DashboardViewModel : ViewModelBase
             if (successfulExportCount > 0)
             {
                 _snackbarManager.Notify(
-                    $"Successfully exported {successfulExportCount} channel(s)"
+                    string.Format(
+                        LocalizationManager.SuccessfulExportMessage,
+                        successfulExportCount
+                    )
                 );
             }
         }
         catch (Exception ex)
         {
-            var dialog = _viewModelManager.CreateMessageBoxViewModel(
-                "Error exporting channel(s)",
+            var dialog = _viewModelManager.GetMessageBoxViewModel(
+                LocalizationManager.ErrorExportingTitle,
                 ex.ToString()
             );
 
@@ -321,18 +324,11 @@ public partial class DashboardViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
-    private void OpenDiscord() => ProcessEx.StartShellExecute("https://discord.com/app");
-
-    [RelayCommand]
-    private void OpenDiscordDeveloperPortal() =>
-        ProcessEx.StartShellExecute("https://discord.com/developers/applications");
-
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            _eventRoot.Dispose();
+            _eventSubscription.Dispose();
         }
 
         base.Dispose(disposing);
